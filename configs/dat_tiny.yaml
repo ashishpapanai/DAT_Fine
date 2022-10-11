@@ -4,7 +4,7 @@ MODEL:
   DAT:
     img_size: 224
     patch_size: 4
-    num_classes: 1000
+    num_classes: 3
     expansion: 4
     dim_stem: 96
     dims: [96, 192, 384, 768]
@@ -33,5 +33,8 @@ TRAIN:
 
 DATA:
   BATCH_SIZE: 128
+  DATASET: 'imagenet'
 
 SAVE_FREQ: 1
+
+PRINT_FREQ: 1

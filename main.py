@@ -20,7 +20,7 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 from collections import OrderedDict
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.utils import accuracy, AverageMeter
+from timm.utils import acc_modified, AverageMeter
 
 from config import get_config
 from models import build_model
@@ -153,9 +153,10 @@ def main():
 
     if config.MODEL.RESUME:
         max_accuracy = load_checkpoint(config, model_without_ddp, optimizer, lr_scheduler, logger)
-        acc1, acc5, loss = validate(config, data_loader_val, model, logger)
+        #acc1, loss = validate(config, data_loader_val, model, logger)
+        validate(config, data_loader_val, model, logger)
         torch.cuda.empty_cache()
-        logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
+        #logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1}%")
         if config.EVAL_MODE:
             return
 
@@ -163,13 +164,13 @@ def main():
     start_time = time.time()
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
         data_loader_train.sampler.set_epoch(epoch)
-        wandb.init(project=args.experiment, config=args)
+        #wandb.init(project=args.experiment, config=args)
         train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler, logger)
         torch.cuda.empty_cache()
         if dist.get_rank() == 0 and ((epoch + 1) % config.SAVE_FREQ == 0 or (epoch + 1) == (config.TRAIN.EPOCHS)):
             save_checkpoint(config, epoch + 1, model_without_ddp, max_accuracy, optimizer, lr_scheduler, logger)
 
-        acc1, acc5, loss = validate(config, data_loader_val, model, logger)
+        acc1, loss = validate(config, data_loader_val, model, logger)
         torch.cuda.empty_cache()
         logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
         max_accuracy = max(max_accuracy, acc1)
@@ -195,7 +196,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
     scaler = GradScaler()
     
     for idx, (samples, targets) in enumerate(data_loader):
-        
+        #print(idx)
         optimizer.zero_grad()
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
@@ -219,6 +220,9 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
                 scaler.update()
         else:
             outputs, _, _ = model(samples)
+            #print(outputs.shape)
+            #print(targets.shape)
+            #exit()
             loss = criterion(outputs, targets)
             loss.backward()
             if config.TRAIN.CLIP_GRAD:
@@ -258,43 +262,52 @@ def validate(config, data_loader, model, logger):
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
     acc1_meter = AverageMeter()
-    acc5_meter = AverageMeter()
-
+    spec_meter = AverageMeter()
+    sens_meter = AverageMeter()
+    #acc5_meter = AverageMeter()
+    acc1, spec, sens = 0, 0, 0
     end = time.time()
+    y_true, y_pred = [], []
     for idx, (images, target) in enumerate(data_loader):
         images = images.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
 
         # compute output
         output, _, _ = model(images)
-
         # measure accuracy and record loss
         loss = criterion(output, target)
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
-
-        acc1 = reduce_tensor(acc1)
-        acc5 = reduce_tensor(acc5)
+        #acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        #print(output)
+        _, pred = torch.max(output, dim=1)
+        #print(pred)
+        y_pred += list(pred.cpu().detach().numpy())
+        y_true += list(target.cpu().detach().numpy())
+        #acc1 = reduce_tensor(acc1)
+        #acc5 = reduce_tensor(acc5)
         loss = reduce_tensor(loss)
 
         loss_meter.update(loss.item(), target.size(0))
-        acc1_meter.update(acc1.item(), target.size(0))
-        acc5_meter.update(acc5.item(), target.size(0))
+        #acc1_meter.update(acc1.item(), target.size(0))
+        #acc5_meter.update(acc5.item(), target.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-
+        #print(y_pred)
+        #print(y_true)
         if (idx + 1) % config.PRINT_FREQ == 0:
+            spec, sens, acc1 = acc_modified(y_pred, y_true)
             memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
             logger.info(
                 f'Test: [{(idx + 1)}/{len(data_loader)}]\t'
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
-                f'Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t'
-                f'Acc@5 {acc5_meter.val:.3f} ({acc5_meter.avg:.3f})\t'
-                f'Mem {memory_used:.0f}MB')
-    logger.info(f' * Acc@1 {acc1_meter.avg:.3f} Acc@5 {acc5_meter.avg:.3f}')
-    return acc1_meter.avg, acc5_meter.avg, loss_meter.avg
+                f'Acc@1 {acc1})\t'
+                f'Spec {spec})\t'
+                f'Sens {sens})\t'
+                f'Mem {memory_used:.0f}MB')               
+    logger.info(f' * Acc@1 {acc1} ' f'Spec {spec} ' f'Sens {sens}')
+    return acc1, loss_meter.avg
 
 if __name__ == '__main__':
     main()

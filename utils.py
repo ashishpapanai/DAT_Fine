@@ -41,6 +41,7 @@ def load_checkpoint(config, model, optimizer, lr_scheduler, logger):
 def load_pretrained(ckpt_path, model, logger):
     logger.info(f"==============> Loading pretrained form {ckpt_path}....................")
     checkpoint = torch.load(ckpt_path, map_location='cpu')
+    #print(checkpoint)
     msg = model.load_pretrained(checkpoint['model'])
     logger.info(msg)
     logger.info(f"=> Loaded successfully {ckpt_path} ")

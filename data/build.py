@@ -23,6 +23,7 @@ from torch.utils.data import DataLoader
     
 def build_loader(config):
     config.defrost()
+    #print("====================> Num Classes: ", config.MODEL.NUM_CLASSES)
     dataset_train, config.MODEL.NUM_CLASSES = build_dataset(is_train=True, config=config)
     config.freeze()
     print(f"local rank {config.LOCAL_RANK} / global rank {dist.get_rank()} successfully build train dataset")
@@ -71,7 +72,7 @@ def build_dataset(is_train, config):
         prefix = 'train' if is_train else 'val'
         root = os.path.join(config.DATA.DATA_PATH, prefix)
         dataset = datasets.ImageFolder(root, transform=transform)
-        nb_classes = 1000
+        nb_classes = 3
     else:
         raise NotImplementedError("We only support ImageNet Now.")
 
