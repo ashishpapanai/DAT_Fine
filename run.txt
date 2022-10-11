@@ -1,1 +1,4 @@
 CUDA_VISIBLE_DEVICES=1,2,3,7 python -m torch.distributed.launch --nproc_per_node 4 main.py --cfg configs/dat_tiny.yaml --data-path /home/ashish_p/scratch/gbcu_data_cpy/ --output output/dat_gbcu/run-1 --tag run-1 --pretrained weights/dat_tiny_in1k_224.pth
+
+
+CUDA_VISIBLE_DEVICES=1,2,3,7 python -m torch.distributed.launch --nproc_per_node 4 main.py --cfg configs/dat_tiny.yaml --data-path /home/ashish_p/scratch/gbcu_data_cpy/ --output output/ --tag run-4 --pretrained weights/dat_tiny_in1k_224.pth
