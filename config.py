@@ -47,7 +47,7 @@ _C.MODEL.NAME = 'dat_tiny'
 # Checkpoint to resume, could be overwritten by command line argument
 _C.MODEL.RESUME = ''
 # Number of classes, overwritten in data preparation
-_C.MODEL.NUM_CLASSES = 3
+_C.MODEL.NUM_CLASSES = 2
 # Label Smoothing
 _C.MODEL.LABEL_SMOOTHING = 0.1
 

@@ -9,11 +9,12 @@
 # --------------------------------------------------------
 
 import os
+import csv
 import time
 import argparse
 import datetime
 import numpy as np
-#import wandb
+import wandb
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
@@ -61,7 +62,7 @@ def parse_option():
 
     return args, config
 
-'''def update_summary(epoch, train_metrics, eval_metrics, filename, write_header=False, log_wandb=False):
+def update_summary(epoch, train_metrics, eval_metrics, filename, write_header=False, log_wandb=True):
     rowd = OrderedDict(epoch=epoch)
     rowd.update([('train_' + k, v) for k, v in train_metrics.items()])
     rowd.update([('eval_' + k, v) for k, v in eval_metrics.items()])
@@ -72,7 +73,7 @@ def parse_option():
         if write_header:  # first iteration (epoch == 1 can't be used)
             dw.writeheader()
         dw.writerow(rowd)
-'''
+
 def main():
     
     args, config = parse_option()
@@ -82,7 +83,7 @@ def main():
     dist.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank) 
     torch.cuda.set_device(local_rank)
     dist.barrier()
-
+    wandb.init(project=args.experiment, config=args)
     seed = config.SEED + dist.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -154,7 +155,7 @@ def main():
     if config.MODEL.RESUME:
         max_accuracy = load_checkpoint(config, model_without_ddp, optimizer, lr_scheduler, logger)
         #acc1, loss = validate(config, data_loader_val, model, logger)
-        validate(config, data_loader_val, model, logger)
+        acc1, loss, eval_metrics = validate(config, data_loader_val, model, logger)
         torch.cuda.empty_cache()
         #logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1}%")
         if config.EVAL_MODE:
@@ -165,7 +166,7 @@ def main():
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
         data_loader_train.sampler.set_epoch(epoch)
         #wandb.init(project=args.experiment, config=args)
-        train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler, logger)
+        train_metrics =train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler, logger)
         torch.cuda.empty_cache()
         if dist.get_rank() == 0 and ((epoch + 1) % config.SAVE_FREQ == 0 or (epoch + 1) == (config.TRAIN.EPOCHS)):
             save_checkpoint(config, epoch + 1, model_without_ddp, max_accuracy, optimizer, lr_scheduler, logger)
@@ -179,6 +180,7 @@ def main():
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('Training time {}'.format(total_time_str))
+    update_summary(epoch, train_metrics, eval_metrics, os.path.join(config.OUTPUT, 'summary.csv'), write_header= (max_accuracy != 0))
 
 
 def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mixup_fn, lr_scheduler, logger):
@@ -253,6 +255,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
                 f'mem {memory_used:.0f}MB')
     epoch_time = time.time() - start
     logger.info(f"EPOCH {epoch + 1} training takes {datetime.timedelta(seconds=int(epoch_time))}")
+    return OrderedDict([('loss', loss_meter.avg)])
 
 @torch.no_grad()
 def validate(config, data_loader, model, logger):
@@ -307,7 +310,8 @@ def validate(config, data_loader, model, logger):
                 f'Sens {sens})\t'
                 f'Mem {memory_used:.0f}MB')               
     logger.info(f' * Acc@1 {acc1} ' f'Spec {spec} ' f'Sens {sens}')
-    return acc1, loss_meter.avg
+    metrics = OrderedDict([('loss', loss_meter.avg), ('top1', acc1), ('spec', spec), ('sens', sens)])
+    return acc1, loss_meter.avg, metrics
 
 if __name__ == '__main__':
     main()
