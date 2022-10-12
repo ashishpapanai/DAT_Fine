@@ -55,6 +55,7 @@ def parse_option():
     parser.add_argument('--tag', help='tag of experiment')
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
     parser.add_argument('--pretrained', type=str, help='Finetune 384 initial checkpoint.', default='')
+    parser.add_argument('--experiment', type=str, help='Experiment name', default='default')
 
     args, unparsed = parser.parse_known_args()
 
@@ -77,13 +78,14 @@ def update_summary(epoch, train_metrics, eval_metrics, filename, write_header=Fa
 def main():
     
     args, config = parse_option()
+    experiment_name = args.experiment
     local_rank = int(os.environ["LOCAL_RANK"])
     rank = int(os.environ["RANK"])
     world_size = int(os.environ['WORLD_SIZE'])
     dist.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank) 
     torch.cuda.set_device(local_rank)
     dist.barrier()
-    wandb.init(project=args.experiment, config=args)
+    #wandb.init(project=experiment_name, config=args)
     seed = config.SEED + dist.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -103,8 +105,9 @@ def main():
 
     os.makedirs(config.OUTPUT, exist_ok=True)
     logger = create_logger(output_dir=config.OUTPUT, dist_rank=dist.get_rank(), name=f"{config.MODEL.NAME}")
-
+    #print("==========================================================>",dist.get_rank())
     if dist.get_rank() == 0:
+        wandb.init(project=args.experiment, config=args)
         path = os.path.join(config.OUTPUT, "config.json")
         with open(path, "w") as f:
             f.write(config.dump())
@@ -160,18 +163,20 @@ def main():
         #logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1}%")
         if config.EVAL_MODE:
             return
-
+    wandb_path = os.path.join(config.OUTPUT, 'summary.csv')
     logger.info("Start training")
     start_time = time.time()
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
         data_loader_train.sampler.set_epoch(epoch)
-        #wandb.init(project=args.experiment, config=args)
         train_metrics =train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler, logger)
         torch.cuda.empty_cache()
         if dist.get_rank() == 0 and ((epoch + 1) % config.SAVE_FREQ == 0 or (epoch + 1) == (config.TRAIN.EPOCHS)):
             save_checkpoint(config, epoch + 1, model_without_ddp, max_accuracy, optimizer, lr_scheduler, logger)
 
-        acc1, loss = validate(config, data_loader_val, model, logger)
+        acc1, loss, eval_metrics  = validate(config, data_loader_val, model, logger)
+        print(eval_metrics)
+        if dist.get_rank() == 0:
+            update_summary(epoch, train_metrics, eval_metrics, wandb_path , write_header= (max_accuracy != 0))
         torch.cuda.empty_cache()
         logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
         max_accuracy = max(max_accuracy, acc1)
@@ -180,9 +185,7 @@ def main():
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('Training time {}'.format(total_time_str))
-    update_summary(epoch, train_metrics, eval_metrics, os.path.join(config.OUTPUT, 'summary.csv'), write_header= (max_accuracy != 0))
-
-
+    
 def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mixup_fn, lr_scheduler, logger):
     model.train()
     optimizer.zero_grad()

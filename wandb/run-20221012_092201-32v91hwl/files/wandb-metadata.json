@@ -1,0 +1,36 @@
+{
+    "os": "Linux-5.4.0-100-generic-x86_64-with-glibc2.27",
+    "python": "3.9.13",
+    "heartbeatAt": "2022-10-12T03:52:02.365566",
+    "startedAt": "2022-10-12T03:52:01.403063",
+    "docker": null,
+    "gpu": "Tesla V100-SXM2-32GB",
+    "gpu_count": 8,
+    "cpu_count": 64,
+    "cuda": null,
+    "args": [
+        "--local_rank=2",
+        "--cfg",
+        "configs/dat_tiny.yaml",
+        "--data-path",
+        "/home/ashish_p/scratch/gbcu_data_cpy/",
+        "--output",
+        "/home/ashish_p/scratch/mnt/weights/",
+        "--tag",
+        "run-5",
+        "--pretrained",
+        "weights/dat_tiny_in1k_224.pth"
+    ],
+    "state": "running",
+    "program": "/nvme/scratch/ashish_p/GBC_Baselines/DAT/main.py",
+    "codePath": "main.py",
+    "git": {
+        "remote": "https://github.com/ashishpapanai/DAT_Fine.git",
+        "commit": "66c0bd7c9026d1c0c711bbb826031566886af453"
+    },
+    "email": "ashishpapanai00@gmail.com",
+    "root": "/nvme/scratch/ashish_p/GBC_Baselines/DAT",
+    "host": "user",
+    "username": "ashish_p",
+    "executable": "/home/ashish_p/scratch/miniconda3/envs/dat_fine/bin/python"
+}

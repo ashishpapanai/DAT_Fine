@@ -1,0 +1,63 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.13.4
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.9.13
+    start_time: 1665548202.970126
+    t:
+      1:
+      - 1
+      - 5
+      - 41
+      - 53
+      - 55
+      - 63
+      2:
+      - 1
+      - 5
+      - 41
+      - 53
+      - 55
+      - 63
+      3:
+      - 16
+      - 23
+      4: 3.9.13
+      5: 0.13.4
+      8:
+      - 5
+amp:
+  desc: null
+  value: false
+cfg:
+  desc: null
+  value: configs/dat_tiny.yaml
+data_path:
+  desc: null
+  value: /home/ashish_p/scratch/gbcu_data_cpy/
+eval:
+  desc: null
+  value: false
+experiment:
+  desc: null
+  value: DAT_GBCU_FineTune
+opts:
+  desc: null
+  value: null
+output:
+  desc: null
+  value: /home/ashish_p/scratch/mnt/weights/
+pretrained:
+  desc: null
+  value: weights/dat_tiny_in1k_224.pth
+resume:
+  desc: null
+  value: null
+tag:
+  desc: null
+  value: run-final
