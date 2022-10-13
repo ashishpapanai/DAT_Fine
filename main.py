@@ -8,20 +8,24 @@
 # Modified by Zhuofan Xia 
 # --------------------------------------------------------
 
+from email.policy import default
 import os
-import csv
+from re import S
 import time
 import argparse
 import datetime
+from typing import OrderedDict
 import numpy as np
+import csv
+from sklearn import metrics
 import wandb
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
-from collections import OrderedDict
+
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.utils import acc_modified, AverageMeter
+from timm.utils import accuracy, AverageMeter
 
 from config import get_config
 from models import build_model
@@ -55,8 +59,8 @@ def parse_option():
     parser.add_argument('--tag', help='tag of experiment')
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
     parser.add_argument('--pretrained', type=str, help='Finetune 384 initial checkpoint.', default='')
-    parser.add_argument('--experiment', type=str, help='Experiment name', default='default')
-
+    parser.add_argument('--log-wandb', action='store_true', default=False, help='log training and validation metrics to wandb')
+    parser.add_argument('--experiment', type=str, help='Name of the wandb run')
     args, unparsed = parser.parse_known_args()
 
     config = get_config(args)
@@ -75,17 +79,17 @@ def update_summary(epoch, train_metrics, eval_metrics, filename, write_header=Fa
             dw.writeheader()
         dw.writerow(rowd)
 
+
 def main():
     
     args, config = parse_option()
-    experiment_name = args.experiment
     local_rank = int(os.environ["LOCAL_RANK"])
     rank = int(os.environ["RANK"])
     world_size = int(os.environ['WORLD_SIZE'])
     dist.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank) 
     torch.cuda.set_device(local_rank)
     dist.barrier()
-    #wandb.init(project=experiment_name, config=args)
+
     seed = config.SEED + dist.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -105,13 +109,15 @@ def main():
 
     os.makedirs(config.OUTPUT, exist_ok=True)
     logger = create_logger(output_dir=config.OUTPUT, dist_rank=dist.get_rank(), name=f"{config.MODEL.NAME}")
-    #print("==========================================================>",dist.get_rank())
+
     if dist.get_rank() == 0:
-        wandb.init(project=args.experiment, config=args)
         path = os.path.join(config.OUTPUT, "config.json")
         with open(path, "w") as f:
             f.write(config.dump())
         logger.info(f"Full config saved to {path}")
+
+    if args.log_wandb and dist.get_rank() == 0:
+        wandb.init(project="swin-transformer", name=args.experiment)
 
     # print config
     logger.info(config.dump())
@@ -157,10 +163,9 @@ def main():
 
     if config.MODEL.RESUME:
         max_accuracy = load_checkpoint(config, model_without_ddp, optimizer, lr_scheduler, logger)
-        #acc1, loss = validate(config, data_loader_val, model, logger)
-        acc1, loss, eval_metrics = validate(config, data_loader_val, model, logger)
+        acc1, acc5, loss, metrics = validate(config, data_loader_val, model, logger)
         torch.cuda.empty_cache()
-        #logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1}%")
+        logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
         if config.EVAL_MODE:
             return
     wandb_path = os.path.join(config.OUTPUT, 'summary.csv')
@@ -168,24 +173,27 @@ def main():
     start_time = time.time()
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
         data_loader_train.sampler.set_epoch(epoch)
-        train_metrics =train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler, logger)
+
+        train_metric = train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler, logger)
         torch.cuda.empty_cache()
         if dist.get_rank() == 0 and ((epoch + 1) % config.SAVE_FREQ == 0 or (epoch + 1) == (config.TRAIN.EPOCHS)):
             save_checkpoint(config, epoch + 1, model_without_ddp, max_accuracy, optimizer, lr_scheduler, logger)
 
-        acc1, loss, eval_metrics  = validate(config, data_loader_val, model, logger)
-        print(eval_metrics)
-        if dist.get_rank() == 0:
-            update_summary(epoch, train_metrics, eval_metrics, wandb_path , write_header= (max_accuracy != 0))
+        acc1, sens, spec, val_metric = validate(config, data_loader_val, model, logger)
+
         torch.cuda.empty_cache()
-        logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
         max_accuracy = max(max_accuracy, acc1)
+        if dist.get_rank() == 0 and args.log_wandb:
+            update_summary(epoch, train_metric, val_metric, wandb_path , write_header= (max_accuracy != 0))
+        logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
         logger.info(f'Max accuracy: {max_accuracy:.2f}%')
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('Training time {}'.format(total_time_str))
-    
+
+
+
 def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mixup_fn, lr_scheduler, logger):
     model.train()
     optimizer.zero_grad()
@@ -201,7 +209,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
     scaler = GradScaler()
     
     for idx, (samples, targets) in enumerate(data_loader):
-        #print(idx)
+        
         optimizer.zero_grad()
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
@@ -225,9 +233,6 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
                 scaler.update()
         else:
             outputs, _, _ = model(samples)
-            #print(outputs.shape)
-            #print(targets.shape)
-            #exit()
             loss = criterion(outputs, targets)
             loss.backward()
             if config.TRAIN.CLIP_GRAD:
@@ -258,6 +263,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
                 f'mem {memory_used:.0f}MB')
     epoch_time = time.time() - start
     logger.info(f"EPOCH {epoch + 1} training takes {datetime.timedelta(seconds=int(epoch_time))}")
+
     return OrderedDict([('loss', loss_meter.avg)])
 
 @torch.no_grad()
@@ -268,53 +274,61 @@ def validate(config, data_loader, model, logger):
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
     acc1_meter = AverageMeter()
-    spec_meter = AverageMeter()
-    sens_meter = AverageMeter()
-    #acc5_meter = AverageMeter()
-    acc1, spec, sens = 0, 0, 0
+    TP_m = AverageMeter()
+    TN_m = AverageMeter()
+    FP_m = AverageMeter()
+    FN_m = AverageMeter()
+    last_idx = len(data_loader) - 1
     end = time.time()
-    y_true, y_pred = [], []
     for idx, (images, target) in enumerate(data_loader):
+        last_batch = idx == last_idx
         images = images.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
 
         # compute output
         output, _, _ = model(images)
+
         # measure accuracy and record loss
         loss = criterion(output, target)
-        #acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        #print(output)
-        _, pred = torch.max(output, dim=1)
-        #print(pred)
-        y_pred += list(pred.cpu().detach().numpy())
-        y_true += list(target.cpu().detach().numpy())
-        #acc1 = reduce_tensor(acc1)
-        #acc5 = reduce_tensor(acc5)
+        acc1, tp, tn, fp, fn = accuracy(output, target, topk=(1, ))
+
+        acc1 = reduce_tensor(acc1)
         loss = reduce_tensor(loss)
+        tp = reduce_tensor(tp)
+        tn = reduce_tensor(tn)
+        fp = reduce_tensor(fp)
+        fn = reduce_tensor(fn)
 
         loss_meter.update(loss.item(), target.size(0))
-        #acc1_meter.update(acc1.item(), target.size(0))
-        #acc5_meter.update(acc5.item(), target.size(0))
+        acc1_meter.update(acc1.item(), target.size(0))
+        TP_m.update(tp.item(), target.size(0))
+        TN_m.update(tn.item(), target.size(0))
+        FP_m.update(fp.item(), target.size(0))
+        FN_m.update(fn.item(), target.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        #print(y_pred)
-        #print(y_true)
-        if (idx + 1) % config.PRINT_FREQ == 0:
-            spec, sens, acc1 = acc_modified(y_pred, y_true)
+
+        if (idx + 1) % config.PRINT_FREQ == 0 or last_batch:
+            sens = TP_m.avg / (TP_m.avg + FN_m.avg)
+            spec = TN_m.avg / (TN_m.avg + FP_m.avg)
             memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
             logger.info(
                 f'Test: [{(idx + 1)}/{len(data_loader)}]\t'
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
-                f'Acc@1 {acc1})\t'
-                f'Spec {spec})\t'
-                f'Sens {sens})\t'
-                f'Mem {memory_used:.0f}MB')               
-    logger.info(f' * Acc@1 {acc1} ' f'Spec {spec} ' f'Sens {sens}')
-    metrics = OrderedDict([('loss', loss_meter.avg), ('top1', acc1), ('spec', spec), ('sens', sens)])
-    return acc1, loss_meter.avg, metrics
+                f'Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t'
+                f'Sens {sens:.3f}\t'
+                f'Spec {spec:.3f}\t'
+                #f'Acc@5 {acc5_meter.val:.3f} ({acc5_meter.avg:.3f})\t'
+                f'Mem {memory_used:.0f}MB')
+    logger.info(f' * Acc@1 {acc1_meter.avg:.3f} Sens {sens:.3f} Spec {spec:.3f}')
+    sens = TP_m.avg / (TP_m.avg + FN_m.avg)
+    spec = TN_m.avg / (TN_m.avg + FP_m.avg)
+
+    metrics = {'acc1': acc1_meter.avg, 'loss': loss_meter.avg, 'sens': sens, 'spec': spec}
+    return acc1_meter.avg, sens, spec, metrics
 
 if __name__ == '__main__':
     main()

@@ -88,7 +88,7 @@ class TransformerStage(nn.Module):
 
 class DAT(nn.Module):
 
-    def __init__(self, img_size=224, patch_size=4, num_classes=1000, expansion=4,
+    def __init__(self, img_size=224, patch_size=4, num_classes=2, expansion=4,
                  dim_stem=96, dims=[96, 192, 384, 768], depths=[2, 2, 6, 2], 
                  heads=[3, 6, 12, 24], 
                  window_sizes=[7, 7, 7, 7],
