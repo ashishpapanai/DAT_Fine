@@ -1,0 +1,32 @@
+=> merge config from configs/dat_tiny.yaml
+=> merge config from configs/dat_tiny.yaml
+=> merge config from configs/dat_tiny.yaml
+=> merge config from configs/dat_tiny.yaml
+local rank 3 / global rank 3 successfully build train dataset
+local rank 2 / global rank 2 successfully build train dataset
+local rank 3 / global rank 3 successfully build val dataset
+local rank 2 / global rank 2 successfully build val dataset
+[32m[2022-10-13 22:48:22 dat_tiny][0m[33m(main.py 117)[0m: INFO Full config saved to output/dat_tiny/default/config.json
+local rank 1 / global rank 1 successfully build train dataset
+local rank 1 / global rank 1 successfully build val dataset
+local rank 0 / global rank 0 successfully build train dataset
+local rank 0 / global rank 0 successfully build val dataset
+[32m[2022-10-13 22:48:22 dat_tiny][0m[33m(main.py 127)[0m: INFO Creating model:dat/dat_tiny
+All checkpoints founded in output/dat_tiny/default: []
+[32m[2022-10-13 22:48:23 dat_tiny][0m[33m(main.py 162)[0m: INFO no checkpoint found in output/dat_tiny/default, ignoring auto resume
+[32m[2022-10-13 22:48:23 dat_tiny][0m[33m(utils.py 18)[0m: INFO ==============> Resuming form /home/ashish_p/scratch/mnt/weights/dat_tiny/run-met-mod-1/ckpt_epoch_95.pth....................
+All checkpoints founded in output/dat_tiny/default: []
+All checkpoints founded in output/dat_tiny/default: []
+All checkpoints founded in output/dat_tiny/default: []
+[32m[2022-10-13 22:48:23 dat_tiny][0m[33m(utils.py 25)[0m: INFO <All keys matched successfully>
+TN, FP, FN, TP
+18 2 2 9
+20 0 3 7
+18 2 3 7
+20 0 2 9
+[32m[2022-10-13 22:48:24 dat_tiny][0m[33m(main.py 322)[0m: INFO Test: [1/1]	Time 1.606 (1.606)	Loss 0.3419 (0.3419)	Acc@1 88.495 (88.495)	Sens 0.762	Spec 0.950	Mem 1647MB
+[32m[2022-10-13 22:48:25 dat_tiny][0m[33m(main.py 331)[0m: INFO  * Acc@1 88.495 Sens 0.762 Spec 0.950
+[32m[2022-10-13 22:48:25 dat_tiny][0m[33m(main.py 168)[0m: INFO Accuracy of the network on the 122 test images: 88.5 %
+[32m[2022-10-13 22:48:25 dat_tiny][0m[33m(main.py 169)[0m: INFO Specificity of the network on the 122 test images: 0.7619047619047619 %
+[32m[2022-10-13 22:48:25 dat_tiny][0m[33m(main.py 170)[0m: INFO Sensitivity of the network on the 122 test images: 0.95 %
+[32m[2022-10-13 22:48:25 dat_tiny][0m[33m(main.py 171)[0m: INFO Metrics of the network on the 122 test images: {'acc1': 88.49462890625, 'loss': 0.3419077694416046, 'sens': 0.7619047619047619, 'spec': 0.95}

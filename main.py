@@ -120,14 +120,14 @@ def main():
         wandb.init(project="swin-transformer", name=args.experiment)
 
     # print config
-    logger.info(config.dump())
+    #logger.info(config.dump())
     
     _, dataset_val, data_loader_train, data_loader_val, mixup_fn = build_loader(config)
 
     logger.info(f"Creating model:{config.MODEL.TYPE}/{config.MODEL.NAME}")
     model = build_model(config)
     model.cuda()
-    logger.info(str(model))
+    #logger.info(str(model))
 
     optimizer = build_optimizer(config, model)
 
@@ -163,11 +163,16 @@ def main():
 
     if config.MODEL.RESUME:
         max_accuracy = load_checkpoint(config, model_without_ddp, optimizer, lr_scheduler, logger)
-        acc1, acc5, loss, metrics = validate(config, data_loader_val, model, logger)
+        acc1, spec, sens, metrics = validate(config, data_loader_val, model, logger)
         torch.cuda.empty_cache()
-        logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
+        logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f} %")
+        logger.info(f"Specificity of the network on the {len(dataset_val)} test images: {spec} %")
+        logger.info(f"Sensitivity of the network on the {len(dataset_val)} test images: {sens} %")
+        logger.info(f"Metrics of the network on the {len(dataset_val)} test images: {metrics}")
+
         if config.EVAL_MODE:
             return
+
     wandb_path = os.path.join(config.OUTPUT, 'summary.csv')
     logger.info("Start training")
     start_time = time.time()
